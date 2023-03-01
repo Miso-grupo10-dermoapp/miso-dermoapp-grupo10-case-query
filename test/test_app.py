@@ -2,7 +2,6 @@ import json
 import os
 
 import boto3
-from boto3.dynamodb.conditions import Key
 import moto
 import pytest
 from request_validation_utils import body_properties
@@ -43,30 +42,34 @@ def data_table(aws_credentials):
 
         yield TABLE_NAME
 
-def test_givenValidInputRequestThenReturn200AndValidPersistence(lambda_environment, data_table):
+@pytest.fixture
+def load_table(data_table):
+    client = boto3.resource("dynamodb")
+    table = client.Table(app.ENV_TABLE_NAME)
+    body = {
+        'case_id': '123',
+        'injury_type': 'test_inj',
+        'shape': 'shape-test',
+        'number_of_lessions': 'lesson_test',
+        'distributions': 'test',
+        'color': 'test-red'
+    }
+    table.put_item(Item=body)
+def test_givenValidInputRequestThenReturn200AndValidPersistence(lambda_environment, load_table):
     event = {
-        "resource": "/patient/{patient_id}/case",
-        "path": "/patient/123/case",
-        "httpMethod": "POST",
+        "resource": "/patient/{patient_id}/case/{case_id}",
+        "path": "/patient/123/case/123",
+        "httpMethod": "GET",
         "pathParameters": {
-            "patient_id": "123"
+            "patient_id": "123",
+            "case_id": "123"
         },
-        "body": "{\n \"case_id\": \"prof-1\", \"injury_type\": \"brown\", \"shape\": \"blue\",\"number_of_lessions\": "
-                "\"honey\", \"distributions\": \"test\", \"color\": \"low\" \n}",
         "isBase64Encoded": False
     }
     lambdaResponse = app.handler(event, [])
 
-    client = boto3.resource("dynamodb", region_name="us-east-1")
-    mockTable = client.Table(TABLE_NAME)
-    response = mockTable.query(
-        KeyConditionExpression=Key('case_id').eq('prof-1')
-    )
-    items = response['Items']
-    if items:
-        data = items[0]
-
     assert lambdaResponse['statusCode'] == 200
+    data = json.loads(lambdaResponse['body'])
     assert data is not None
     for property in body_properties:
         assert data[property] is not None
@@ -80,31 +83,13 @@ def test_givenMissingBodyOnRequestThenReturnError500(lambda_environment, data_ta
         "pathParameters": {
             "patient_id": "123"
         },
-        "body": "{}",
         "isBase64Encoded": False
     }
     lambdaResponse = app.handler(event, [])
 
-    assert lambdaResponse['statusCode'] == 500
-    assert '{"message": "cannot proceed with the request error: ' in lambdaResponse['body']
+    assert lambdaResponse['statusCode'] == 412
+    assert '{"message": "missing or malformed request body"}' in lambdaResponse['body']
 
-
-def test_givenMalformedBodyRequestThenReturnError500(lambda_environment, data_table):
-    event = {
-        "resource": "/patient/{patient_id}/profile",
-        "path": "/patient/123/profile",
-        "httpMethod": "POST",
-        "pathParameters": {
-            "patient_id": "123"
-        },
-        "body": "{\n \"other_field\": \"prof-1\", \"tone_skin\": \"brown\", \"eye_color\": \"blue\",\"hair_coloring\": "
-                "\"honey\", \"tan_effect\": \"test\", \"sun_tolerance\": \"low\" \n}",
-        "isBase64Encoded": False
-    }
-    lambdaResponse = app.handler(event, [])
-
-    assert lambdaResponse['statusCode'] == 500
-    assert '{"message": "cannot proceed with the request error: Input request is malformed or missing parameters' in lambdaResponse['body']
 
 def test_givenRequestWithoutPatientIDThenReturnError412(lambda_environment, data_table):
     event = {
