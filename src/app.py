@@ -9,7 +9,7 @@ ENV_TABLE_NAME = "dermoapp-patient-cases"
 
 def handler(event, context):
     try:
-        print("lambda execution with context {0}".format(str(context)))
+        print("lambda query case patient execution with context {0}".format(str(context)))
         if validate_property_exist("patient_id", event['pathParameters']) and validate_property_exist("case_id", event['pathParameters']):
                 response = get_item("case_id", event['pathParameters']['case_id'])
                 return return_status_ok(response)
